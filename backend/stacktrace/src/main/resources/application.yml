@@ -1,0 +1,80 @@
+spring:
+  application:
+    name: stacktrace
+  config:
+    import:
+      - optional:file:.env[.properties]
+      - optional:file:./backend/stacktrace/.env[.properties]
+  datasource:
+    url: ${SPRING_DATASOURCE_URL:jdbc:postgresql://localhost:5432/stacktrace_db}
+    username: ${SPRING_DATASOURCE_USERNAME:postgres}
+    password: ${SPRING_DATASOURCE_PASSWORD:postgres}
+    driver-class-name: org.postgresql.Driver
+    hikari:
+      maximum-pool-size: ${DB_POOL_MAX_SIZE:10}
+      minimum-idle: ${DB_POOL_MIN_IDLE:2}
+      connection-timeout: ${DB_CONNECTION_TIMEOUT_MS:30000}
+      idle-timeout: ${DB_IDLE_TIMEOUT_MS:600000}
+      max-lifetime: ${DB_MAX_LIFETIME_MS:1800000}
+  jpa:
+    open-in-view: false
+    show-sql: ${JPA_SHOW_SQL:false}
+    hibernate:
+      ddl-auto: ${JPA_DDL_AUTO:validate}
+    properties:
+      hibernate:
+        format_sql: false
+  flyway:
+    enabled: ${FLYWAY_ENABLED:true}
+    baseline-on-migrate: true
+    locations: classpath:db/migration
+  ai:
+    google:
+      genai:
+        api-key: ${GEMINI_API_KEY:placeholder-gemini-key}
+        chat:
+          options:
+            model: ${GEMINI_MODEL:gemini-3.5-flash}
+            temperature: ${GEMINI_TEMPERATURE:0.2}
+            max-output-tokens: ${GEMINI_MAX_OUTPUT_TOKENS:20000}
+    retry:
+      max-attempts: ${GEMINI_RETRY_MAX_ATTEMPTS:3}
+      backoff:
+        initial-interval: ${GEMINI_RETRY_INITIAL_INTERVAL:1000ms}
+        multiplier: ${GEMINI_RETRY_MULTIPLIER:2}
+        max-interval: ${GEMINI_RETRY_MAX_INTERVAL:8000ms}
+      on-http-codes:
+        - 429
+        - 503
+  security:
+    oauth2:
+      client:
+        registration:
+          google:
+            client-id: ${GOOGLE_CLIENT_ID:google-client-id-placeholder}
+            client-secret: ${GOOGLE_CLIENT_SECRET:google-client-secret-placeholder}
+            scope:
+              - openid
+              - profile
+              - email
+            redirect-uri: "{baseUrl}/login/oauth2/code/{registrationId}"
+            client-name: Google
+
+server:
+  port: ${PORT:${SERVER_PORT:8080}}
+  forward-headers-strategy: framework
+  tomcat:
+    max-http-form-post-size: 100KB
+
+app:
+  ai:
+    fallback-models: ${GEMINI_FALLBACK_MODELS:gemini-2.5-flash-lite,gemini-2.0-flash}
+  analysis:
+    max-payload-bytes: ${MAX_PAYLOAD_BYTES:102400}
+  jwt:
+    secret: ${JWT_SECRET:404E635266556A586E3272357538782F413F4428472B4B6250645367566B5970}
+    expiration-ms: ${JWT_EXPIRATION_MS:86400000}
+  oauth2:
+    authorized-redirect-uri: ${FRONTEND_REDIRECT_URI:http://localhost:4200/auth/callback}
+  cors:
+    allowed-origins: ${ALLOWED_ORIGINS:http://localhost:4200}

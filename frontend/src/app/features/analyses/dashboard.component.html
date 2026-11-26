@@ -1,0 +1,448 @@
+<div class="min-h-screen bg-slate-950 text-slate-100 flex flex-col">
+  <!-- Minimal Top Bar -->
+  <header class="bg-slate-900/80 backdrop-blur border-b border-slate-800 sticky top-0 z-40">
+    <div class="max-w-[1440px] mx-auto px-4 sm:px-6 h-14 flex items-center justify-between gap-3">
+      <div class="flex items-center gap-2.5">
+        <div class="h-8 w-8 rounded-lg bg-gradient-to-tr from-indigo-500 to-cyan-500 flex items-center justify-center font-mono font-bold text-white text-xs shadow-sm">
+          &gt;_
+        </div>
+        <span class="font-semibold text-base tracking-tight text-white">StackTrace Buddy</span>
+      </div>
+
+      <div class="flex items-center gap-2.5 relative">
+        <!-- Info Button -->
+        <button
+          type="button"
+          (click)="showInfo.set(!showInfo()); showUserMenu.set(false)"
+          title="About StackTrace Buddy"
+          class="h-8 w-8 rounded-lg border border-slate-800 bg-slate-900 hover:bg-slate-800 text-slate-400 hover:text-slate-100 flex items-center justify-center transition cursor-pointer"
+        >
+          <span class="text-xs font-mono font-bold">i</span>
+        </button>
+
+        <!-- Mobile History Toggle -->
+        <button
+          type="button"
+          (click)="showMobileHistory.set(!showMobileHistory())"
+          class="lg:hidden px-3 py-1.5 rounded-lg border border-slate-800 bg-slate-900 hover:bg-slate-800 text-xs font-medium text-slate-300 cursor-pointer"
+        >
+          History
+        </button>
+
+        <!-- Optional Auth Controls -->
+        @if (authService.user(); as user) {
+          <div class="relative">
+            <button
+              type="button"
+              (click)="showUserMenu.set(!showUserMenu()); showInfo.set(false)"
+              class="flex items-center gap-2 px-2.5 py-1 rounded-lg border border-slate-800 bg-slate-900 hover:bg-slate-800 transition cursor-pointer"
+            >
+              @if (user.avatarUrl) {
+                <img [src]="user.avatarUrl" [alt]="user.name" class="w-6 h-6 rounded-full object-cover" />
+              } @else {
+                <div class="w-6 h-6 rounded-full bg-indigo-600 flex items-center justify-center text-[11px] font-bold text-white">
+                  {{ user.name.charAt(0).toUpperCase() }}
+                </div>
+              }
+              <span class="hidden sm:inline text-xs font-medium text-slate-200">{{ user.name }}</span>
+            </button>
+
+            @if (showUserMenu()) {
+              <div class="absolute right-0 mt-2 w-48 rounded-xl bg-slate-900 border border-slate-800 shadow-2xl py-1.5 z-50">
+                <div class="px-3 py-1.5 border-b border-slate-800">
+                  <p class="text-xs font-medium text-white truncate">{{ user.name }}</p>
+                  <p class="text-[11px] text-slate-400 truncate">{{ user.email }}</p>
+                </div>
+                <a
+                  routerLink="/profile"
+                  (click)="showUserMenu.set(false)"
+                  class="block px-3 py-2 text-xs text-slate-300 hover:bg-slate-800 hover:text-white transition"
+                >
+                  Profile &amp; Password
+                </a>
+                <button
+                  type="button"
+                  (click)="showUserMenu.set(false); authService.logout()"
+                  class="w-full text-left px-3 py-2 text-xs text-red-300 hover:bg-slate-800 transition cursor-pointer"
+                >
+                  Sign out
+                </button>
+              </div>
+            }
+          </div>
+        } @else {
+          <a
+            routerLink="/login"
+            class="px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-xs font-semibold text-white transition"
+          >
+            Sign in
+          </a>
+        }
+
+        <!-- Info Popover -->
+        @if (showInfo()) {
+          <div class="absolute right-0 top-11 w-80 sm:w-96 rounded-2xl bg-slate-900 border border-slate-700/80 shadow-2xl p-4 z-50 text-xs space-y-2.5">
+            <div class="flex items-center justify-between">
+              <span class="font-semibold text-sm text-white">About StackTrace Buddy</span>
+              <button
+                type="button"
+                (click)="showInfo.set(false)"
+                class="text-slate-400 hover:text-white cursor-pointer"
+              >
+                &times;
+              </button>
+            </div>
+            <p class="text-slate-300 leading-relaxed">
+              Paste any stack trace to get a structured root-cause diagnosis, pinpointed location, code fix, and Markdown report powered by Gemini &amp; Spring AI.
+            </p>
+            <ul class="space-y-1.5 text-slate-400">
+              <li><strong class="text-slate-200">Secret Redaction:</strong> API keys, tokens, passwords, and DB credentials are scrubbed before processing or storage.</li>
+              <li><strong class="text-slate-200">Optional Account:</strong> Works immediately via an anonymous session ID, or sign in (Google or ID/password) to link analyses to your profile.</li>
+              <li><strong class="text-slate-200">History:</strong> Switch between anonymized All History and My History, and search by stack trace keywords.</li>
+            </ul>
+          </div>
+        }
+      </div>
+    </div>
+  </header>
+
+  <!-- Main Responsive Layout -->
+  <div class="flex-1 max-w-[1440px] w-full mx-auto px-4 sm:px-6 py-5 grid grid-cols-1 lg:grid-cols-12 gap-5 items-start">
+    <!-- Left / Main Column: Input + Markdown Output -->
+    <main class="lg:col-span-8 xl:col-span-9 space-y-5 min-w-0">
+      <!-- Input Container -->
+      <section class="bg-slate-900/70 border border-slate-800 rounded-2xl p-4 sm:p-5 shadow-lg">
+        <div class="flex flex-wrap items-center justify-between gap-2 mb-3">
+          <div class="flex items-center gap-2">
+            <select
+              [ngModel]="languageHint()"
+              (ngModelChange)="languageHint.set($event)"
+              aria-label="Language hint"
+              class="rounded-lg bg-slate-950 border border-slate-800 px-2.5 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-indigo-500"
+            >
+              @for (lang of languages; track lang) {
+                <option [value]="lang">{{ lang }}</option>
+              }
+            </select>
+
+            <button
+              type="button"
+              (click)="showContextInput.set(!showContextInput())"
+              class="px-2.5 py-1.5 rounded-lg border text-xs transition cursor-pointer"
+              [class]="showContextInput()
+                ? 'border-indigo-500/40 bg-indigo-500/10 text-indigo-300'
+                : 'border-slate-800 bg-slate-950 text-slate-400 hover:text-slate-200'"
+            >
+              {{ showContextInput() ? 'Hide Context' : '+ Code Context' }}
+            </button>
+          </div>
+
+          <span
+            class="text-[11px] font-mono"
+            [class]="rawStackTrace().length > 50000 ? 'text-red-400' : 'text-slate-500'"
+          >
+            {{ rawStackTrace().length | number }} / 50,000
+          </span>
+        </div>
+
+        <textarea
+          [ngModel]="rawStackTrace()"
+          (ngModelChange)="rawStackTrace.set($event)"
+          (keydown)="onKeyDown($event)"
+          rows="7"
+          placeholder="Paste full stack trace here..."
+          class="w-full rounded-xl bg-slate-950 border border-slate-800 p-3.5 font-mono text-xs sm:text-[13px] leading-relaxed text-slate-100 placeholder-slate-600 focus:outline-none focus:border-indigo-500 transition resize-y"
+        ></textarea>
+
+        @if (showContextInput()) {
+          <div class="mt-3">
+            <div class="flex items-center justify-between mb-1">
+              <label class="text-[11px] text-slate-400">Optional Code Snippet</label>
+              <span class="text-[11px] font-mono text-slate-500">{{ codeContext().length | number }} / 10,000</span>
+            </div>
+            <textarea
+              [ngModel]="codeContext()"
+              (ngModelChange)="codeContext.set($event)"
+              rows="4"
+              placeholder="Paste relevant source lines around the failure..."
+              class="w-full rounded-xl bg-slate-950 border border-slate-800 p-3 font-mono text-xs text-slate-200 placeholder-slate-600 focus:outline-none focus:border-indigo-500 transition resize-y"
+            ></textarea>
+          </div>
+        }
+
+        <div class="mt-3.5 flex items-center justify-between gap-3">
+          <span class="text-[11px] text-slate-500 hidden sm:inline">Ctrl + Enter to analyze</span>
+          <div class="flex items-center gap-2 ml-auto">
+            @if (rawStackTrace() || codeContext()) {
+              <button
+                type="button"
+                (click)="clearInput()"
+                class="px-3 py-2 rounded-xl border border-slate-800 bg-slate-950 hover:bg-slate-800 text-xs font-medium text-slate-300 transition cursor-pointer"
+              >
+                Clear
+              </button>
+            }
+            <button
+              type="button"
+              (click)="submitAnalysis()"
+              [disabled]="!canSubmit()"
+              class="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 disabled:opacity-45 disabled:cursor-not-allowed text-xs font-semibold text-white transition flex items-center gap-2 cursor-pointer"
+            >
+              @if (analyzing()) {
+                <span class="w-3.5 h-3.5 border-2 border-white/80 border-t-transparent rounded-full animate-spin"></span>
+                <span>Analyzing...</span>
+              } @else {
+                <span>Analyze</span>
+              }
+            </button>
+          </div>
+        </div>
+      </section>
+
+      <!-- Error Banner (FR-12) -->
+      @if (errorMessage()) {
+        <div class="rounded-xl bg-red-950/60 border border-red-500/40 px-4 py-3 text-xs text-red-200 flex items-center justify-between gap-3">
+          <span>{{ errorMessage() }}</span>
+          <button
+            type="button"
+            (click)="errorMessage.set(null)"
+            class="text-red-300 hover:text-white text-sm leading-none cursor-pointer"
+          >
+            &times;
+          </button>
+        </div>
+      }
+
+      <!-- Output Container -->
+      <section class="bg-slate-900/70 border border-slate-800 rounded-2xl shadow-lg overflow-hidden">
+        @if (analyzing() || loadingDetail()) {
+          <!-- Loading Skeleton (FR-12) -->
+          <div class="p-6 space-y-4 animate-pulse">
+            <div class="flex items-center gap-3">
+              <div class="h-6 w-20 bg-slate-800 rounded-full"></div>
+              <div class="h-6 w-48 bg-slate-800 rounded-lg"></div>
+            </div>
+            <div class="h-4 w-3/4 bg-slate-800 rounded"></div>
+            <div class="h-4 w-5/6 bg-slate-800 rounded"></div>
+            <div class="h-28 w-full bg-slate-800/80 rounded-xl mt-4"></div>
+            <div class="h-4 w-2/3 bg-slate-800 rounded"></div>
+          </div>
+        } @else if (selectedAnalysis(); as item) {
+          <!-- Report Metadata & Export Actions -->
+          <div class="px-5 py-3.5 border-b border-slate-800 bg-slate-900/90 flex flex-wrap items-center justify-between gap-3">
+            <div class="flex flex-wrap items-center gap-2 min-w-0">
+              <span
+                class="px-2.5 py-0.5 rounded-full text-[11px] font-semibold border"
+                [class]="severityClass(item.severity)"
+              >
+                {{ item.severity }}
+              </span>
+              <span class="px-2.5 py-0.5 rounded-full text-[11px] font-medium bg-slate-800 text-slate-200">
+                {{ item.detectedLanguage }}
+              </span>
+              @if (item.analysisResult.failureLocation?.fileName && item.analysisResult.failureLocation.fileName !== 'Unknown') {
+                <span class="px-2.5 py-0.5 rounded-full text-[11px] font-mono bg-slate-950 text-indigo-300 border border-slate-800 truncate max-w-[220px]">
+                  {{ item.analysisResult.failureLocation.fileName }}@if (item.analysisResult.failureLocation.lineNumber) {<span>:{{ item.analysisResult.failureLocation.lineNumber }}</span>}
+                </span>
+              }
+            </div>
+
+            <div class="flex flex-wrap items-center gap-1.5">
+              @if (item.analysisResult.codeFix?.snippet) {
+                <button
+                  type="button"
+                  (click)="copyCodePatch()"
+                  class="px-2.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-[11px] font-medium text-slate-200 transition cursor-pointer"
+                >
+                  {{ copiedCode() ? 'Copied Code' : 'Copy Code' }}
+                </button>
+              }
+              <button
+                type="button"
+                (click)="copyMarkdownReport()"
+                class="px-2.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-[11px] font-medium text-slate-200 transition cursor-pointer"
+              >
+                {{ copiedMarkdown() ? 'Copied .md' : 'Copy .md' }}
+              </button>
+              <button
+                type="button"
+                (click)="exportMarkdownFile()"
+                class="px-2.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-[11px] font-medium text-slate-200 transition cursor-pointer"
+              >
+                Export .md
+              </button>
+              <button
+                type="button"
+                (click)="showRawTrace.set(!showRawTrace())"
+                class="px-2.5 py-1.5 rounded-lg border border-slate-700 text-[11px] font-medium text-slate-300 hover:text-white transition cursor-pointer"
+              >
+                {{ showRawTrace() ? 'Hide Trace' : 'Raw Trace' }}
+              </button>
+            </div>
+          </div>
+
+          @if (showRawTrace()) {
+            <div class="px-5 py-4 border-b border-slate-800 bg-slate-950/70 space-y-3">
+              <div>
+                <p class="text-[11px] font-medium text-slate-400 mb-1">Sanitized Stack Trace</p>
+                <pre class="text-xs font-mono text-slate-300 whitespace-pre-wrap break-words max-h-48 overflow-y-auto">{{ item.rawStackTrace }}</pre>
+              </div>
+              @if (item.codeContext) {
+                <div>
+                  <p class="text-[11px] font-medium text-slate-400 mb-1">Sanitized Code Context</p>
+                  <pre class="text-xs font-mono text-slate-300 whitespace-pre-wrap break-words max-h-36 overflow-y-auto">{{ item.codeContext }}</pre>
+                </div>
+              }
+            </div>
+          }
+
+          <!-- Open-source Markdown Formatter Output Container -->
+          <div class="p-5 sm:p-6">
+            <markdown [data]="item.markdownReport" class="markdown-body block"></markdown>
+          </div>
+        } @else {
+          <!-- Minimal Empty State -->
+          <div class="p-12 text-center">
+            <div class="mx-auto h-10 w-10 rounded-xl bg-slate-800/80 flex items-center justify-center font-mono text-indigo-400 text-sm mb-3">
+              &gt;_
+            </div>
+            <p class="text-sm font-medium text-slate-300">Diagnostic output appears here</p>
+            <p class="text-xs text-slate-500 mt-1">Submit a stack trace or pick an entry from history.</p>
+          </div>
+        }
+      </section>
+    </main>
+
+    <!-- Right Sidebar: History (All History without user details + My History dropdown + Keyword search) -->
+    <aside
+      [class]="showMobileHistory()
+        ? 'lg:col-span-4 xl:col-span-3 bg-slate-900/70 border border-slate-800 rounded-2xl p-4 shadow-lg flex flex-col max-h-[calc(100vh-5.5rem)]'
+        : 'hidden lg:flex lg:col-span-4 xl:col-span-3 bg-slate-900/70 border border-slate-800 rounded-2xl p-4 shadow-lg flex-col max-h-[calc(100vh-5.5rem)] sticky top-[4.5rem]'"
+    >
+      <div class="flex items-center justify-between gap-2 mb-3">
+        <h2 class="text-sm font-semibold text-white">History</h2>
+        <select
+          [ngModel]="historyScope()"
+          (ngModelChange)="onScopeChange($event)"
+          aria-label="History scope"
+          class="rounded-lg bg-slate-950 border border-slate-800 px-2.5 py-1 text-xs font-medium text-slate-200 focus:outline-none focus:border-indigo-500 cursor-pointer"
+        >
+          <option value="all">All History</option>
+          <option value="mine">
+            {{ authService.isAuthenticated() ? 'My History' : 'My Session' }}
+          </option>
+        </select>
+      </div>
+
+      <!-- Keyword Search & Language Filter -->
+      <div class="space-y-2 mb-3">
+        <div class="relative">
+          <input
+            type="text"
+            [ngModel]="searchQuery()"
+            (ngModelChange)="onSearchChange($event)"
+            placeholder="Search stack trace keywords..."
+            class="w-full rounded-xl bg-slate-950 border border-slate-800 pl-3 pr-7 py-2 text-xs text-slate-100 placeholder-slate-500 focus:outline-none focus:border-indigo-500"
+          />
+          @if (searchQuery()) {
+            <button
+              type="button"
+              (click)="clearSearch()"
+              class="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-white text-xs cursor-pointer"
+            >
+              &times;
+            </button>
+          }
+        </div>
+
+        <select
+          [ngModel]="historyLanguage()"
+          (ngModelChange)="onLanguageFilterChange($event)"
+          aria-label="Filter by language"
+          class="w-full rounded-xl bg-slate-950 border border-slate-800 px-2.5 py-1.5 text-xs text-slate-300 focus:outline-none focus:border-indigo-500"
+        >
+          <option value="all">All Languages</option>
+          @for (lang of languages.slice(1); track lang) {
+            <option [value]="lang">{{ lang }}</option>
+          }
+        </select>
+      </div>
+
+      <!-- History List (strictly no user details displayed) -->
+      <div class="flex-1 overflow-y-auto space-y-2 pr-0.5 min-h-[200px]">
+        @if (historyLoading()) {
+          <div class="space-y-2 animate-pulse">
+            @for (n of [1, 2, 3, 4]; track n) {
+              <div class="h-16 rounded-xl bg-slate-800/60"></div>
+            }
+          </div>
+        } @else if (historyData().items.length === 0) {
+          <div class="py-10 text-center text-xs text-slate-500">
+            No matching analyses found.
+          </div>
+        } @else {
+          @for (entry of historyData().items; track entry.id) {
+            <div
+              (click)="selectHistoryItem(entry.id)"
+              [class]="selectedAnalysis()?.id === entry.id
+                ? 'rounded-xl border border-indigo-500/60 bg-indigo-500/10 p-3 cursor-pointer transition'
+                : 'rounded-xl border border-slate-800/80 bg-slate-950/60 hover:border-slate-700 p-3 cursor-pointer transition'"
+            >
+              <div class="flex items-start justify-between gap-2">
+                <div class="flex items-center gap-2 min-w-0">
+                  <span class="w-2 h-2 rounded-full flex-shrink-0" [class]="severityDotClass(entry.severity)"></span>
+                  <span class="text-xs font-semibold text-slate-100 truncate">{{ entry.errorType }}</span>
+                </div>
+
+                @if (entry.canDelete) {
+                  <button
+                    type="button"
+                    (click)="deleteHistoryItem($event, entry.id)"
+                    title="Delete"
+                    class="text-slate-500 hover:text-red-400 text-xs leading-none px-1 cursor-pointer"
+                  >
+                    &times;
+                  </button>
+                }
+              </div>
+
+              <p class="text-[11px] text-slate-400 line-clamp-2 mt-1">
+                {{ entry.summary || entry.fileName }}
+              </p>
+
+              <div class="flex items-center justify-between gap-2 mt-2 text-[10px] text-slate-500">
+                <span class="px-1.5 py-0.5 rounded bg-slate-800/80 text-slate-300">{{ entry.detectedLanguage }}</span>
+                <span>{{ formatDate(entry.createdAt) }}</span>
+              </div>
+            </div>
+          }
+        }
+      </div>
+
+      <!-- Pagination -->
+      @if (historyData().totalPages > 1) {
+        <div class="pt-3 mt-3 border-t border-slate-800 flex items-center justify-between text-xs text-slate-400">
+          <button
+            type="button"
+            (click)="goToPage(historyData().page - 1)"
+            [disabled]="!historyData().hasPrevious"
+            class="px-2.5 py-1 rounded-lg bg-slate-950 border border-slate-800 disabled:opacity-40 hover:text-white cursor-pointer"
+          >
+            Prev
+          </button>
+          <span class="text-[11px]">
+            {{ historyData().page + 1 }} / {{ historyData().totalPages }}
+          </span>
+          <button
+            type="button"
+            (click)="goToPage(historyData().page + 1)"
+            [disabled]="!historyData().hasNext"
+            class="px-2.5 py-1 rounded-lg bg-slate-950 border border-slate-800 disabled:opacity-40 hover:text-white cursor-pointer"
+          >
+            Next
+          </button>
+        </div>
+      }
+    </aside>
+  </div>
+</div>

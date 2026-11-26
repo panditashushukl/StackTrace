@@ -11,7 +11,7 @@
 
 ---
 
-## Technologies Used & What Each One Does
+## Technologies Used
 
 ### Frontend
 | Technology | Role in This Project |

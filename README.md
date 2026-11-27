@@ -1,5 +1,7 @@
 # StackTrace Buddy
 
+**Live App:** [https://stack-trace-neon.vercel.app](https://stack-trace-neon.vercel.app)
+
 **StackTrace Buddy** is an AI-powered error diagnosis tool built to help developers understand and fix crashes faster. Instead of reading through long, nested error logs manually, you can paste a stack trace from any language (with optional code context or a language hint) and get a structured diagnosis—covering the error type, severity, plain-English summary, root cause, exact failing file and line, step-by-step fix, refactored code snippet, and preventive tips—rendered cleanly as Markdown.
 
 ## What the Project Does

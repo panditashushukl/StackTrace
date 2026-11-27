@@ -74,6 +74,11 @@ app:
   jwt:
     secret: ${JWT_SECRET:404E635266556A586E3272357538782F413F4428472B4B6250645367566B5970}
     expiration-ms: ${JWT_EXPIRATION_MS:86400000}
+    refresh-expiration-ms: ${REFRESH_TOKEN_EXPIRATION_MS:1296000000}
+    refresh-cleanup-cron: ${REFRESH_CLEANUP_CRON:0 0 3 * * *}
+  cookie:
+    secure: ${COOKIE_SECURE:auto}
+    same-site: ${COOKIE_SAME_SITE:auto}
   oauth2:
     authorized-redirect-uri: ${FRONTEND_REDIRECT_URI:http://localhost:4200/auth/callback}
   cors:

@@ -84,6 +84,10 @@ export class DashboardComponent implements OnInit, OnDestroy {
   );
 
   ngOnInit(): void {
+    if (!this.authService.isInitialized()) {
+      this.authService.restoreSession().subscribe();
+    }
+
     this.searchInput$
       .pipe(debounceTime(300), distinctUntilChanged(), takeUntil(this.destroy$))
       .subscribe(() => {

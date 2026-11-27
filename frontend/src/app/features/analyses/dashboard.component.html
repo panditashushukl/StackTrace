@@ -70,6 +70,8 @@
               </div>
             }
           </div>
+        } @else if (authService.isLoading()) {
+          <div class="h-8 w-20 rounded-lg bg-slate-800/80 animate-pulse"></div>
         } @else {
           <a
             routerLink="/login"
@@ -93,7 +95,7 @@
               </button>
             </div>
             <p class="text-slate-300 leading-relaxed">
-              Paste any stack trace to get a structured root-cause diagnosis, pinpointed location, code fix, and Markdown report powered by Gemini &amp; Spring AI.
+              Paste any stack trace to get a structured root-cause diagnosis, pinpointed location, code fix, and Markdown report.
             </p>
             <ul class="space-y-1.5 text-slate-400">
               <li><strong class="text-slate-200">Secret Redaction:</strong> API keys, tokens, passwords, and DB credentials are scrubbed before processing or storage.</li>

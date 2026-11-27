@@ -32,6 +32,11 @@ describe('DashboardComponent', () => {
     const fixture = TestBed.createComponent(DashboardComponent);
     fixture.detectChanges();
 
+    const meReq = httpMock.expectOne((req) => req.url.endsWith('/api/v1/users/me'));
+    meReq.flush({}, { status: 401, statusText: 'Unauthorized' });
+    const refreshReq401 = httpMock.expectOne((req) => req.url.endsWith('/api/v1/auth/refresh'));
+    refreshReq401.flush({}, { status: 401, statusText: 'Unauthorized' });
+
     const historyReq = httpMock.expectOne((req) =>
       req.url.includes('/api/v1/analyses') && req.params.get('scope') === 'all'
     );
@@ -123,6 +128,9 @@ describe('DashboardComponent', () => {
     const fixture = TestBed.createComponent(DashboardComponent);
     fixture.detectChanges();
 
+    httpMock.expectOne((req) => req.url.endsWith('/api/v1/users/me')).flush({}, { status: 401, statusText: 'Unauthorized' });
+    httpMock.expectOne((req) => req.url.endsWith('/api/v1/auth/refresh')).flush({}, { status: 401, statusText: 'Unauthorized' });
+
     const initReq = httpMock.expectOne((req) => req.params.get('scope') === 'all');
     initReq.flush({
       items: [],
@@ -152,6 +160,9 @@ describe('DashboardComponent', () => {
   it('should render all history without exposing user details and send keyword query', () => {
     const fixture = TestBed.createComponent(DashboardComponent);
     fixture.detectChanges();
+
+    httpMock.expectOne((req) => req.url.endsWith('/api/v1/users/me')).flush({}, { status: 401, statusText: 'Unauthorized' });
+    httpMock.expectOne((req) => req.url.endsWith('/api/v1/auth/refresh')).flush({}, { status: 401, statusText: 'Unauthorized' });
 
     const initReq = httpMock.expectOne((req) => req.params.get('scope') === 'all');
     initReq.flush({

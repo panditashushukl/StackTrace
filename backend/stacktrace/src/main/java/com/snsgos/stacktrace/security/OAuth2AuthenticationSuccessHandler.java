@@ -1,6 +1,7 @@
 package com.snsgos.stacktrace.security;
 
 import com.snsgos.stacktrace.entity.User;
+import com.snsgos.stacktrace.service.RefreshTokenService;
 import com.snsgos.stacktrace.service.UserService;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
@@ -11,7 +12,6 @@ import org.springframework.security.core.Authentication;
 import org.springframework.security.oauth2.core.user.OAuth2User;
 import org.springframework.security.web.authentication.SimpleUrlAuthenticationSuccessHandler;
 import org.springframework.stereotype.Component;
-import org.springframework.web.util.UriComponentsBuilder;
 
 import java.io.IOException;
 
@@ -22,6 +22,8 @@ public class OAuth2AuthenticationSuccessHandler extends SimpleUrlAuthenticationS
 
     private final JwtService jwtService;
     private final UserService userService;
+    private final RefreshTokenService refreshTokenService;
+    private final AuthCookieService authCookieService;
 
     @Value("${app.oauth2.authorized-redirect-uri:http://localhost:4200/auth/callback}")
     private String redirectUri;
@@ -29,35 +31,28 @@ public class OAuth2AuthenticationSuccessHandler extends SimpleUrlAuthenticationS
     @Override
     public void onAuthenticationSuccess(HttpServletRequest request, HttpServletResponse response,
                                         Authentication authentication) throws IOException {
-        UserPrincipal principal = resolvePrincipal(authentication.getPrincipal());
+        User user = resolveUser(authentication.getPrincipal());
 
-        String role = principal.getAuthorities().stream()
-                .findFirst()
-                .map(Object::toString)
-                .orElse("ROLE_USER");
-
-        String token = jwtService.generateToken(
-                principal.getId(),
-                principal.getEmail(),
-                principal.getName(),
-                role
+        String accessToken = jwtService.generateToken(
+                user.getId(),
+                user.getEmail(),
+                user.getName(),
+                user.getRole().name()
         );
+        String refreshToken = refreshTokenService.createRefreshToken(user);
 
-        String targetUrl = UriComponentsBuilder.fromUriString(redirectUri)
-                .queryParam("token", token)
-                .build().toUriString();
+        authCookieService.addAuthCookies(request, response, accessToken, refreshToken);
 
         clearAuthenticationAttributes(request);
-        getRedirectStrategy().sendRedirect(request, response, targetUrl);
+        getRedirectStrategy().sendRedirect(request, response, redirectUri);
     }
 
-    private UserPrincipal resolvePrincipal(Object rawPrincipal) {
+    private User resolveUser(Object rawPrincipal) {
         if (rawPrincipal instanceof UserPrincipal userPrincipal) {
-            return userPrincipal;
+            return userService.getUserEntity(userPrincipal.getId());
         }
         if (rawPrincipal instanceof OAuth2User oauth2User) {
-            User user = userService.processOAuthPostLogin(oauth2User.getAttributes());
-            return UserPrincipal.create(user, oauth2User.getAttributes());
+            return userService.processOAuthPostLogin(oauth2User.getAttributes());
         }
         throw new IllegalStateException("Unsupported OAuth2 principal type: "
                 + (rawPrincipal != null ? rawPrincipal.getClass().getName() : "null"));

@@ -1,35 +1,35 @@
 import { Injectable, computed, inject, signal } from '@angular/core';
-import { HttpClient } from '@angular/common/http';
+import { HttpClient, HttpErrorResponse } from '@angular/common/http';
 import { Router } from '@angular/router';
 import { AuthResponse, LoginPayload, RegisterPayload, User } from './user.model';
 import { environment } from '../../../environments/environment';
-import { Observable, switchMap, tap } from 'rxjs';
+import { Observable, catchError, finalize, map, of, shareReplay, switchMap, tap } from 'rxjs';
 
 @Injectable({ providedIn: 'root' })
 export class AuthService {
   private readonly http = inject(HttpClient);
   private readonly router = inject(Router);
 
-  private readonly tokenKey = 'stb_auth_token';
   private readonly sessionKey = 'stb_session_id';
+  private readonly legacyTokenKey = 'stb_auth_token';
+  private readonly legacyHintKey = 'stb_has_session';
 
-  private readonly tokenSignal = signal<string | null>(this.getStoredToken());
   private readonly sessionSignal = signal<string | null>(this.getOrCreateSessionId());
   private readonly userSignal = signal<User | null>(null);
   private readonly loadingSignal = signal<boolean>(false);
+  private readonly initializedSignal = signal<boolean>(false);
 
-  readonly token = this.tokenSignal.asReadonly();
+  private refreshInFlight$: Observable<User> | null = null;
+  private restoreInFlight$: Observable<boolean> | null = null;
+
   readonly sessionId = this.sessionSignal.asReadonly();
   readonly user = this.userSignal.asReadonly();
-  readonly isAuthenticated = computed(() => !!this.tokenSignal());
+  readonly isAuthenticated = computed(() => !!this.userSignal());
   readonly isLoading = this.loadingSignal.asReadonly();
+  readonly isInitialized = this.initializedSignal.asReadonly();
 
   constructor() {
-    if (this.tokenSignal()) {
-      this.fetchCurrentUser().subscribe({
-        error: () => this.clearAuth(),
-      });
-    }
+    this.cleanupLegacyStorage();
   }
 
   loginWithGoogle(): void {
@@ -39,7 +39,7 @@ export class AuthService {
   loginWithCredentials(payload: LoginPayload): Observable<AuthResponse> {
     return this.http.post<AuthResponse>(`${environment.apiUrl}/auth/login`, payload).pipe(
       tap((res) => {
-        this.persistAuth(res.token, res.user);
+        this.persistUser(res.user);
         this.router.navigate(['/analyses']);
       })
     );
@@ -48,10 +48,26 @@ export class AuthService {
   register(payload: RegisterPayload): Observable<AuthResponse> {
     return this.http.post<AuthResponse>(`${environment.apiUrl}/auth/register`, payload).pipe(
       tap((res) => {
-        this.persistAuth(res.token, res.user);
+        this.persistUser(res.user);
         this.router.navigate(['/analyses']);
       })
     );
+  }
+
+  refreshSession(): Observable<User> {
+    if (!this.refreshInFlight$) {
+      this.refreshInFlight$ = this.http
+        .post<AuthResponse>(`${environment.apiUrl}/auth/refresh`, {})
+        .pipe(
+          map((res) => res.user),
+          tap((user) => this.persistUser(user)),
+          shareReplay(1),
+          finalize(() => {
+            this.refreshInFlight$ = null;
+          })
+        );
+    }
+    return this.refreshInFlight$;
   }
 
   updatePassword(newPassword: string): Observable<User> {
@@ -60,15 +76,16 @@ export class AuthService {
       .pipe(switchMap(() => this.fetchCurrentUser()));
   }
 
-  handleAuthCallback(token: string): Observable<User> {
-    this.tokenSignal.set(token);
-    if (typeof window !== 'undefined' && window.localStorage) {
-      localStorage.setItem(this.tokenKey, token);
-    }
+  handleAuthCallback(): Observable<User> {
     return this.fetchCurrentUser().pipe(
       tap({
         next: () => this.router.navigate(['/analyses']),
-        error: () => this.logout(),
+        error: () => {
+          this.clearAuth();
+          this.router.navigate(['/login'], {
+            queryParams: { error: 'Unable to verify Google session. Please try again.' },
+          });
+        },
       })
     );
   }
@@ -78,7 +95,7 @@ export class AuthService {
     return this.http.get<User>(`${environment.apiUrl}/users/me`).pipe(
       tap({
         next: (user) => {
-          this.userSignal.set(user);
+          this.persistUser(user);
           this.loadingSignal.set(false);
         },
         error: () => {
@@ -86,6 +103,32 @@ export class AuthService {
         },
       })
     );
+  }
+
+  restoreSession(): Observable<boolean> {
+    if (this.userSignal()) {
+      this.loadingSignal.set(false);
+      this.initializedSignal.set(true);
+      return of(true);
+    }
+    if (!this.restoreInFlight$) {
+      this.restoreInFlight$ = this.fetchCurrentUser().pipe(
+        map(() => true),
+        catchError((err: unknown) => {
+          if (err instanceof HttpErrorResponse && (err.status === 401 || err.status === 403)) {
+            this.userSignal.set(null);
+          }
+          return of(false);
+        }),
+        finalize(() => {
+          this.loadingSignal.set(false);
+          this.initializedSignal.set(true);
+          this.restoreInFlight$ = null;
+        }),
+        shareReplay(1)
+      );
+    }
+    return this.restoreInFlight$;
   }
 
   syncSessionId(sessionId: string): void {
@@ -99,31 +142,30 @@ export class AuthService {
   }
 
   clearAuth(): void {
-    this.tokenSignal.set(null);
     this.userSignal.set(null);
-    if (typeof window !== 'undefined' && window.localStorage) {
-      localStorage.removeItem(this.tokenKey);
-    }
+    this.initializedSignal.set(true);
+    this.loadingSignal.set(false);
   }
 
   logout(): void {
     this.clearAuth();
-    this.router.navigate(['/analyses']);
+    this.http.post<void>(`${environment.apiUrl}/auth/logout`, {}).subscribe({
+      complete: () => this.router.navigate(['/analyses']),
+      error: () => this.router.navigate(['/analyses']),
+    });
   }
 
-  private persistAuth(token: string, user: User): void {
-    this.tokenSignal.set(token);
+  private persistUser(user: User): void {
     this.userSignal.set(user);
-    if (typeof window !== 'undefined' && window.localStorage) {
-      localStorage.setItem(this.tokenKey, token);
-    }
+    this.initializedSignal.set(true);
+    this.loadingSignal.set(false);
   }
 
-  private getStoredToken(): string | null {
+  private cleanupLegacyStorage(): void {
     if (typeof window !== 'undefined' && window.localStorage) {
-      return localStorage.getItem(this.tokenKey);
+      localStorage.removeItem(this.legacyTokenKey);
+      localStorage.removeItem(this.legacyHintKey);
     }
-    return null;
   }
 
   private getOrCreateSessionId(): string | null {

@@ -125,9 +125,14 @@ public class UserService {
 
     @Transactional(readOnly = true)
     public UserProfileResponse getUserProfile(UUID userId) {
-        User user = userRepository.findById(userId)
-                .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "User not found with id: " + userId));
+        User user = getUserEntity(userId);
         return toProfileResponse(user);
+    }
+
+    @Transactional(readOnly = true)
+    public User getUserEntity(UUID userId) {
+        return userRepository.findById(userId)
+                .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "User not found with id: " + userId));
     }
 
     public UserProfileResponse toProfileResponse(User user) {

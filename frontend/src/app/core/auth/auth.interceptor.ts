@@ -1,22 +1,22 @@
-import { HttpInterceptorFn, HttpResponse } from '@angular/common/http';
+import { HttpContextToken, HttpInterceptorFn, HttpResponse } from '@angular/common/http';
 import { inject } from '@angular/core';
 import { AuthService } from './auth.service';
-import { catchError, tap, throwError } from 'rxjs';
+import { catchError, switchMap, tap, throwError } from 'rxjs';
+
+const RETRIED_AFTER_REFRESH = new HttpContextToken<boolean>(() => false);
 
 export const authInterceptor: HttpInterceptorFn = (req, next) => {
   const authService = inject(AuthService);
-  const token = authService.token();
   const sessionId = authService.sessionId();
+  const isOAuthRedirect = req.url.includes('/oauth2/');
 
-  const headers: Record<string, string> = {};
-  if (token && !req.url.includes('/oauth2/')) {
-    headers['Authorization'] = `Bearer ${token}`;
+  let authReq = req;
+  if (!isOAuthRedirect) {
+    authReq = req.clone({
+      withCredentials: true,
+      ...(sessionId ? { setHeaders: { 'X-Session-Id': sessionId } } : {}),
+    });
   }
-  if (sessionId && !req.url.includes('/oauth2/')) {
-    headers['X-Session-Id'] = sessionId;
-  }
-
-  const authReq = Object.keys(headers).length > 0 ? req.clone({ setHeaders: headers }) : req;
 
   return next(authReq).pipe(
     tap((event) => {
@@ -28,14 +28,31 @@ export const authInterceptor: HttpInterceptorFn = (req, next) => {
       }
     }),
     catchError((error) => {
+      const isAuthEndpoint =
+        req.url.includes('/auth/login') ||
+        req.url.includes('/auth/register') ||
+        req.url.includes('/auth/refresh') ||
+        req.url.includes('/auth/logout');
+
       if (
         error.status === 401 &&
-        token &&
-        !req.url.includes('/users/me') &&
-        !req.url.includes('/auth/')
+        !isAuthEndpoint &&
+        !req.context.get(RETRIED_AFTER_REFRESH)
       ) {
-        authService.clearAuth();
+        return authService.refreshSession().pipe(
+          switchMap(() => {
+            const retriedReq = authReq.clone({
+              context: authReq.context.set(RETRIED_AFTER_REFRESH, true),
+            });
+            return next(retriedReq);
+          }),
+          catchError((refreshError) => {
+            authService.clearAuth();
+            return throwError(() => refreshError);
+          })
+        );
       }
+
       return throwError(() => error);
     })
   );
